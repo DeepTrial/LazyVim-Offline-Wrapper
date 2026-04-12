@@ -1,0 +1,19 @@
+# Build artifacts
+nvchad-offline/
+nvchad-offline.tar.gz
+nvchad-offline-*.tar.gz
+
+# Temporary files
+*.tmp
+*.log
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/

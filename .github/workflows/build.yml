@@ -1,0 +1,82 @@
+name: Build NvChad Offline Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      parsers:
+        description: 'Treesitter parsers (comma-separated)'
+        required: true
+        default: 'lua,vim,vimdoc,python,javascript,typescript,json,html,css,bash,c,cpp'
+        type: string
+      lsp:
+        description: 'Mason LSP servers (comma-separated)'
+        required: true
+        default: 'lua_ls'
+        type: string
+
+jobs:
+  build:
+    # Use Ubuntu 20.04 for glibc compatibility
+    # Binaries built on glibc 2.31 work on both Ubuntu 20.04 and 22.04
+    runs-on: ubuntu-20.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@v1
+        with:
+          neovim: true
+          version: stable
+
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc g++ tree
+
+      - name: Build offline package
+        env:
+          PARSERS: ${{ inputs.parsers }}
+          LSP: ${{ inputs.lsp }}
+        run: |
+          chmod +x build.sh
+
+          # Build with all components
+          ./build.sh --treesitter "$PARSERS" --mason "$LSP"
+
+      - name: Show package contents
+        run: |
+          echo "## Package Contents" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tree nvchad-offline || ls -R nvchad-offline
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## File Sizes" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          ls -lh nvchad-offline.tar.gz
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvchad-offline-ubuntu
+          path: nvchad-offline.tar.gz
+          retention-days: 30
+
+  release:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nvchad-offline-ubuntu
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: nvchad-offline.tar.gz
