@@ -173,9 +173,9 @@ if [ "$BUILD_TREESITTER" = true ]; then
 
     # Create temporary Neovim config
     TMP_NVIM=$(mktemp -d)
-    mkdir -p "$TMP_NVIM"
     cp -r "$OFFLINE_DIR/lazy-plugins/lazy.nvim" "$TMP_NVIM/"
     cp -r "$OFFLINE_DIR/lazy-plugins/nvim-treesitter" "$TMP_NVIM/"
+    cp -r "$OFFLINE_DIR/lazy-plugins/plenary.nvim" "$TMP_NVIM/"
 
     cat > "$TMP_NVIM/init.lua" << EOF
 vim.g.mapleader = " "
@@ -186,9 +186,12 @@ require("lazy").setup({
     {
         "nvim-treesitter/nvim-treesitter",
         dir = "$TMP_NVIM/nvim-treesitter",
+        dependencies = { dir = "$TMP_NVIM/plenary.nvim" },
+        build = ":TSUpdate",
         opts = {
             ensure_installed = vim.split("$PARSERS", ","),
             sync_install = true,
+            auto_install = false,
         },
         config = function(_, opts)
             require("nvim-treesitter.configs").setup(opts)
@@ -201,18 +204,40 @@ require("lazy").setup({
 EOF
 
     echo "  Installing parsers: ${PARSERS//,/, }"
-    NVIM_APPNAME="nvchad-build" timeout 300 nvim --headless \
-        "+TSInstallSync ${PARSERS//,/ }" \
-        "+sleep 5" "+q" 2>&1 || true
 
-    # Copy compiled parsers
-    BUILT_PARSERS="$HOME/.local/share/nvimchad-build/lazy/nvim-treesitter/parser"
-    if [ -d "$BUILT_PARSERS" ]; then
-        find "$BUILT_PARSERS" -name "*.so" -exec cp -v {} "$PARSER_DIR/" \; 2>/dev/null || true
-        COUNT=$(ls -1 "$PARSER_DIR"/*.so 2>/dev/null | wc -l)
-        echo -e "  ${GREEN}Built $COUNT parsers${NC}"
+    # Run nvim to install parsers - use multiple commands to ensure completion
+    NVIM_APPNAME="nvchad-build" nvim --headless \
+        "+Lazy! load nvim-treesitter" \
+        "+TSInstallSync ${PARSERS//,/ } force" \
+        "+sleep 10" \
+        "+q" 2>&1 | tail -20 || true
+
+    # Find parser directory - check multiple possible locations
+    PARSER_FOUND=false
+    for SEARCH_DIR in \
+        "$HOME/.local/share/nvimchad-build/lazy/nvim-treesitter/parser" \
+        "$HOME/.local/share/nvimchad-build/nvim-treesitter/parser" \
+        "$TMP_NVIM/nvim-treesitter/parser"
+    do
+        if [ -d "$SEARCH_DIR" ]; then
+            SO_COUNT=$(find "$SEARCH_DIR" -name "*.so" 2>/dev/null | wc -l)
+            if [ "$SO_COUNT" -gt 0 ]; then
+                echo "  Found $SO_COUNT parsers in $SEARCH_DIR"
+                cp "$SEARCH_DIR"/*.so "$PARSER_DIR/" 2>/dev/null || true
+                PARSER_FOUND=true
+                break
+            fi
+        fi
+    done
+
+    # Count final parsers
+    FINAL_COUNT=$(ls -1 "$PARSER_DIR"/*.so 2>/dev/null | wc -l)
+    if [ "$FINAL_COUNT" -gt 0 ]; then
+        echo -e "  ${GREEN}Built $FINAL_COUNT parsers${NC}"
+        ls "$PARSER_DIR"/*.so | xargs -n1 basename
     else
-        echo -e "  ${YELLOW}Warning: No parsers were built${NC}"
+        echo -e "  ${RED}Error: No parsers were built${NC}"
+        echo "  Check if gcc/g++ is installed and working"
     fi
 
     rm -rf "$TMP_NVIM"
