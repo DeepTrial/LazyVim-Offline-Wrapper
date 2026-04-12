@@ -18,27 +18,29 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      # Use Ubuntu 20.04 container for glibc 2.31 compatibility
-      # Binaries work on both Ubuntu 20.04 and 22.04
       image: ubuntu:20.04
       options: --user root
+    env:
+      DEBIAN_FRONTEND: noninteractive
 
     steps:
       - name: Install dependencies
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y \
+          apt-get install -y \
             git curl ca-certificates \
-            gcc g++ make \
+            gcc g++ make cmake \
+            gettext unzip \
             tree
           rm -rf /var/lib/apt/lists/*
 
-      - name: Install Neovim
+      - name: Build Neovim from source
         run: |
-          curl -LO https://github.com/neovim/neovim/releases/download/stable/nvim-linux-x86_64.tar.gz
-          tar xzf nvim-linux-x86_64.tar.gz
-          mv nvim-linux-x86_64 /opt/nvim
-          ln -s /opt/nvim/bin/nvim /usr/local/bin/nvim
+          # Build Neovim 0.11+ from source for glibc 2.31 compatibility
+          git clone --depth 1 --branch stable https://github.com/neovim/neovim.git
+          cd neovim
+          make CMAKE_BUILD_TYPE=Release
+          make install
           nvim --version
 
       - name: Checkout
