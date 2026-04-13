@@ -110,7 +110,7 @@ cp -r "$OFFLINE_DIR/base-config/NvChad" "$NVIM_DATA/lazy-dev/"
 PLUGIN_COUNT=0
 for d in "$OFFLINE_DIR/lazy-plugins"/*/; do
     name=$(basename "$d")
-    [ "$name" != "lazy.nvim" ] && cp -r "$d" "$NVIM_DATA/lazy/" && ((PLUGIN_COUNT++))
+    [ "$name" != "lazy.nvim" ] && cp -r "$d" "$NVIM_DATA/lazy/" && PLUGIN_COUNT=$((PLUGIN_COUNT + 1))
 done
 echo "  $PLUGIN_COUNT plugins installed"
 
