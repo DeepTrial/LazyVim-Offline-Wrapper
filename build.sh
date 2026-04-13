@@ -178,6 +178,10 @@ if [ "$BUILD_TREESITTER" = true ]; then
             curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable 2>&1
             export PATH="$HOME/.cargo/bin:$PATH"
         fi
+        # libclang is required by tree-sitter-cli's bindgen dependency
+        if ! dpkg -s libclang-dev &> /dev/null; then
+            apt-get update && apt-get install -y libclang-dev 2>&1 || true
+        fi
         cargo install tree-sitter-cli 2>&1
         echo "  $(tree-sitter --version)"
     fi
