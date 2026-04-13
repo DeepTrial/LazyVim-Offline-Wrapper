@@ -203,8 +203,6 @@ end
 vim.api.nvim_create_autocmd("VimEnter", {
     once = true,
     callback = function()
-        local total = #parsers
-
         for _, parser in ipairs(parsers) do
             print("Installing: " .. parser)
             local ok, err = pcall(vim.cmd, "TSInstall " .. parser)
@@ -213,41 +211,12 @@ vim.api.nvim_create_autocmd("VimEnter", {
             end
         end
 
-        -- Candidate directories where parsers may be written
-        local search_dirs = {
-            (ts_dir or "") .. "/parser",
-            vim.fn.stdpath("data") .. "/parser",
-            vim.fn.stdpath("data") .. "/site/parser",
-            vim.fn.stdpath("data") .. "/site/pack/dist/start/nvim-treesitter/parser",
-        }
-
-        local function count_installed()
-            local found = 0
-            for _, parser in ipairs(parsers) do
-                for _, dir in ipairs(search_dirs) do
-                    if vim.fn.filereadable(dir .. "/" .. parser .. ".so") == 1 then
-                        found = found + 1
-                        break
-                    end
-                end
-            end
-            return found
-        end
-
-        -- Poll for completion
-        local timer = vim.uv.new_timer()
-        local elapsed = 0
-        timer:start(5000, 5000, vim.schedule_wrap(function()
-            elapsed = elapsed + 5
-            local installed = count_installed()
-            print("  Progress: " .. installed .. "/" .. total .. " parsers (" .. elapsed .. "s)")
-            if installed >= total or elapsed >= 120 then
-                timer:stop()
-                timer:close()
-                print("  Final: " .. installed .. "/" .. total .. " parsers installed")
-                vim.cmd("q!")
-            end
-        end))
+        -- Wait for async installs to complete, then quit
+        -- TSInstall is async; 120s is enough for 12 parsers to download + compile
+        vim.defer_fn(function()
+            print("Install wait complete, exiting.")
+            vim.cmd("q!")
+        end, 120000)
     end,
 })
 INITEOF
@@ -263,17 +232,11 @@ INITEOF
     TS_PLUGIN_DIR="$BUILD_DATA/nvim/site/pack/dist/start/nvim-treesitter" \
     nvim --headless 2>&1 || true
 
-    # Find compiled parsers in all known locations
-    for SEARCH_DIR in \
-        "$BUILD_DATA/nvim/site/pack/dist/start/nvim-treesitter/parser" \
-        "$BUILD_DATA/nvim/parser" \
-        "$BUILD_DATA/nvim/site/parser" \
-        "$BUILD_STATE/nvim/parser" \
-        "$BUILD_CACHE/nvim/parser"; do
-        if [ -d "$SEARCH_DIR" ]; then
-            echo "  Found parsers in: $SEARCH_DIR"
-            cp "$SEARCH_DIR"/*.so "$PARSER_DIR/" 2>/dev/null || true
-        fi
+    # Find compiled parsers anywhere under the build tree
+    echo "  Searching for compiled parsers..."
+    find "$BUILD_ROOT" -name "*.so" -type f | while read -r sofile; do
+        echo "    Found: $sofile"
+        cp "$sofile" "$PARSER_DIR/" 2>/dev/null || true
     done
 
     # Count final
@@ -283,7 +246,9 @@ INITEOF
         ls "$PARSER_DIR"/*.so | xargs -n1 basename
     else
         echo -e "  ${RED}Error: No parsers were built${NC}"
-        echo "  Check if gcc/g++ and tree-sitter CLI are installed"
+        echo "  Diagnostics - directory tree:"
+        find "$BUILD_ROOT" -type d | head -30
+        echo "  Check if gcc/g++ are installed"
     fi
 
     rm -rf "$BUILD_ROOT"
