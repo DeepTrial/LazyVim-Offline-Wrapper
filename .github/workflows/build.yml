@@ -34,6 +34,7 @@ jobs:
             git curl ca-certificates \
             gcc g++ make cmake \
             gettext unzip \
+            libclang-dev \
             tree
           rm -rf /var/lib/apt/lists/*
 
