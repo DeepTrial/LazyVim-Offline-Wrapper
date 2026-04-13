@@ -171,6 +171,17 @@ if [ "$BUILD_TREESITTER" = true ]; then
     PARSER_DIR="$OFFLINE_DIR/treesitter/linux-x64"
     mkdir -p "$PARSER_DIR"
 
+    # Ensure tree-sitter CLI is available (required by nvim-treesitter for compilation)
+    if ! command -v tree-sitter &> /dev/null; then
+        echo "  Installing tree-sitter CLI..."
+        TS_CLI=$(mktemp)
+        curl -sL https://github.com/tree-sitter/tree-sitter/releases/latest/download/tree-sitter-linux-x64.gz \
+            | gunzip > "$TS_CLI"
+        chmod +x "$TS_CLI"
+        mv "$TS_CLI" /usr/local/bin/tree-sitter
+        echo "  tree-sitter $(tree-sitter --version 2>&1 || echo 'installed')"
+    fi
+
     # Create a proper Neovim config directory structure
     BUILD_ROOT=$(mktemp -d)
     BUILD_CONFIG="$BUILD_ROOT/config/nvim"
