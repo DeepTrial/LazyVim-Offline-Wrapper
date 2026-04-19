@@ -173,134 +173,26 @@ mkdir -p "$BUILD_CONFIG" "$BUILD_DATA" "$BUILD_STATE" "$BUILD_CACHE"
 # Copy starter config to build config
 cp -r "$OFFLINE_DIR/lazyvim-starter/"* "$BUILD_CONFIG/"
 
-# Create a custom init.lua that forces offline mode and disables update checks
-cat > "$BUILD_CONFIG/init.lua" << 'INITEOF'
--- Bootstrap lazy.nvim (will use local copy if available)
-local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
-if not vim.loop.fs_stat(lazypath) then
-    -- Try to use local copy from offline package
-    local offline_lazy = os.getenv("OFFLINE_LAZY_PATH")
-    if offline_lazy and vim.loop.fs_stat(offline_lazy) then
-        vim.fn.mkdir(vim.fn.fnamemodify(lazypath, ":h"), "p")
-        vim.fn.system({"cp", "-r", offline_lazy, lazypath})
-    else
-        -- Fallback: clone (should not happen in build)
-        vim.fn.system({
-            "git",
-            "clone",
-            "--filter=blob:none",
-            "https://github.com/folke/lazy.nvim.git",
-            "--branch=stable",
-            lazypath,
-        })
-    end
-end
-vim.opt.rtp:prepend(lazypath)
-
--- Load LazyVim configuration
-require("lazyvim.config").init()
-
--- Setup lazy.nvim with offline configuration
-require("lazy").setup({
-    spec = {
-        { "LazyVim/LazyVim", import = "lazyvim.plugins" },
-        { import = "plugins" },
-    },
-    defaults = {
-        lazy = false,
-        version = false, -- always use latest git commit
-    },
-    install = {
-        missing = true,
-        colorscheme = { "tokyonight", "habamax" },
-    },
-    checker = { enabled = false }, -- disable update checker
-    change_detection = { enabled = false },
-    performance = {
-        rtp = {
-            disabled_plugins = {
-                "gzip",
-                "matchit",
-                "matchparen",
-                "netrwPlugin",
-                "tarPlugin",
-                "tohtml",
-                "tutor",
-                "zipPlugin",
-            },
-        },
-    },
-})
-
--- Load settings
-require("config.options")
-require("config.keymaps")
-require("config.autocmds")
-INITEOF
-
 # Export environment variables for the build
 export XDG_CONFIG_HOME="$BUILD_ROOT/config"
 export XDG_DATA_HOME="$BUILD_ROOT/data"
 export XDG_STATE_HOME="$BUILD_ROOT/state"
 export XDG_CACHE_HOME="$BUILD_ROOT/cache"
 
-# First, download lazy.nvim itself
-echo "  Downloading lazy.nvim..."
-git clone --depth 1 --branch stable https://github.com/folke/lazy.nvim "$BUILD_DATA/nvim/lazy/lazy.nvim"
-
-# Set offline path for init.lua
-export OFFLINE_LAZY_PATH="$BUILD_DATA/nvim/lazy/lazy.nvim"
-
-# Run nvim to download all plugins
+# Run nvim once to let it bootstrap lazy.nvim and download all plugins
 echo "  Starting Neovim to download all plugins..."
 echo "  (This may take several minutes...)"
 
-# Create a script to wait for lazy sync and then quit
-cat > "$BUILD_ROOT/sync.lua" << 'SYNCEOF'
--- Wait for lazy to finish installing
-local function wait_for_install()
-    local lazy = require("lazy")
-    local start_time = vim.loop.now()
-    local timeout = 300000 -- 5 minutes timeout
+# The starter's init.lua will:
+# 1. Bootstrap lazy.nvim (clone it)
+# 2. Setup lazy.nvim
+# 3. lazy.nvim will download all plugins including LazyVim
 
-    while true do
-        local stats = lazy.stats()
-        -- Check if all plugins are installed
-        if stats.loaded > 0 and stats.loaded == stats.count then
-            print("All plugins loaded: " .. stats.loaded .. "/" .. stats.count)
-            break
-        end
+# Run neovim headless - it will auto-install on first run, then we force quit after timeout
+timeout 300 "$NVIM_BIN" --headless -u "$BUILD_CONFIG/init.lua" -c 'qa!' 2>&1 || true
 
-        -- Check timeout
-        if vim.loop.now() - start_time > timeout then
-            print("Timeout waiting for plugins")
-            break
-        end
-
-        vim.loop.sleep(1000)
-        vim.cmd("redraw")
-        print("Waiting for plugins... " .. (stats.loaded or 0) .. "/" .. (stats.count or "?"))
-    end
-
-    -- Wait a bit more for any final operations
-    vim.defer_fn(function()
-        vim.cmd("qa!")
-    end, 3000)
-end
-
--- Schedule the wait function
-vim.schedule(function()
-    -- First ensure all plugins are installed
-    require("lazy").sync({ wait = true })
-    wait_for_install()
-end)
-SYNCEOF
-
-# Run neovim to sync plugins
-"$NVIM_BIN" --headless -u "$BUILD_CONFIG/init.lua" -c "luafile $BUILD_ROOT/sync.lua" 2>&1 || true
-
-# Give extra time for any remaining downloads
-sleep 10
+# Give extra time for any async downloads to complete
+sleep 30
 
 # Check what was downloaded
 echo ""
