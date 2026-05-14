@@ -32,6 +32,8 @@ NVIM_CONFIG="${XDG_CONFIG_HOME:-$HOME/.config}/nvim"
 NVIM_DATA="${XDG_DATA_HOME:-$HOME/.local/share}/nvim"
 NVIM_STATE="${XDG_STATE_HOME:-$HOME/.local/state}/nvim"
 NVIM_CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/nvim"
+# Runtime files go to a separate directory to avoid conflict with lazy.nvim data
+NVIM_RUNTIME="${HOME}/.local/share/nvim-runtime"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -69,11 +71,19 @@ fi
 # Create ~/.local/bin if it doesn't exist
 mkdir -p "$LOCAL_BIN"
 
-# Copy neovim binary
+# Copy neovim binary (rename to nvim.bin, create wrapper that sets VIMRUNTIME)
 if [ -f "$NVIM_SOURCE/bin/nvim" ]; then
-    cp "$NVIM_SOURCE/bin/nvim" "$LOCAL_BIN/nvim"
+    cp "$NVIM_SOURCE/bin/nvim" "$LOCAL_BIN/nvim.bin"
+    chmod +x "$LOCAL_BIN/nvim.bin"
+
+    # Create wrapper script that sets VIMRUNTIME before launching nvim
+    cat > "$LOCAL_BIN/nvim" << WRAPPER
+#!/bin/bash
+export VIMRUNTIME="\$HOME/.local/share/nvim-runtime/runtime"
+exec "\$HOME/.local/bin/nvim.bin" "\$@"
+WRAPPER
     chmod +x "$LOCAL_BIN/nvim"
-    echo "  Neovim binary installed to $LOCAL_BIN/nvim"
+    echo "  Neovim installed to $LOCAL_BIN/nvim (with runtime wrapper)"
 else
     echo -e "${RED}Error: nvim binary not found${NC}"
     exit 1
@@ -88,11 +98,13 @@ if [[ ":$PATH:" != *":$LOCAL_BIN:"* ]]; then
     echo ""
 fi
 
-# Copy neovim runtime files
+# Copy neovim runtime files (separate from data dir to avoid conflict with lazy.nvim)
 if [ -d "$NVIM_SOURCE/share/nvim" ]; then
-    mkdir -p "${HOME}/.local/share"
-    cp -r "$NVIM_SOURCE/share/nvim" "${HOME}/.local/share/"
-    echo "  Neovim runtime files installed"
+    mkdir -p "$NVIM_RUNTIME"
+    # Remove old runtime dir if present (fresh install)
+    rm -rf "$NVIM_RUNTIME/runtime"
+    cp -r "$NVIM_SOURCE/share/nvim" "$NVIM_RUNTIME/"
+    echo "  Neovim runtime files installed to $NVIM_RUNTIME"
 fi
 
 # Copy neovim lib files if present
@@ -153,9 +165,6 @@ if not vim.loop.fs_stat(lazypath) then
     return
 end
 vim.opt.rtp:prepend(lazypath)
-
--- Bootstrap LazyVim configuration
-require("lazyvim.config").init()
 
 -- Setup plugins in offline mode
 require("lazy").setup({
@@ -246,7 +255,8 @@ echo ""
 echo -e "${GREEN}============================================${NC}"
 echo -e "${GREEN}Installation complete!${NC}"
 echo ""
-echo "  Neovim binary: $LOCAL_BIN/nvim"
+echo "  Neovim binary: $LOCAL_BIN/nvim (wrapper) -> $LOCAL_BIN/nvim.bin"
+echo "  Runtime: $NVIM_RUNTIME/runtime"
 echo "  Config: $NVIM_CONFIG"
 echo "  Data: $NVIM_DATA"
 echo ""
