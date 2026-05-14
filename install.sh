@@ -159,7 +159,7 @@ cat > "$NVIM_CONFIG/init.lua" << 'EOF'
 local lazypath = vim.fn.stdpath("data") .. "/lazy/lazy.nvim"
 
 -- Check for lazy.nvim, install from local copy if missing
-if not vim.loop.fs_stat(lazypath) then
+if not vim.uv.fs_stat(lazypath) then
     -- Fallback: should already be installed by install.sh
     vim.notify("lazy.nvim not found at " .. lazypath, vim.log.levels.ERROR)
     return
