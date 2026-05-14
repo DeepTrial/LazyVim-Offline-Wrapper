@@ -29,7 +29,7 @@ usage() {
     echo "  --mason [packages]      Build Mason LSP servers (comma-separated)"
     echo "                          Default: lua_ls"
     echo "  --all                   Build both Treesitter and Mason with defaults"
-    echo "  --no-neovim             Skip building neovim (use system neovim)"
+    echo "  --no-neovim             Skip downloading neovim (use system neovim)"
     echo "  --help                  Show this help"
     echo ""
     echo "Examples:"
@@ -99,42 +99,74 @@ mkdir -p "$OFFLINE_DIR"/{lazy-plugins,lazyvim-starter,nvim/linux-x64}
 NVIM_BIN="nvim"
 
 # ============================================
-# 1. Build Neovim from source (Ubuntu 20.04 compatible)
+# 1. Obtain Neovim (prebuilt download, fallback to source build)
 # ============================================
 if [ "$BUILD_NEOVIM" = true ]; then
-    echo -e "${YELLOW}[1/5] Building Neovim from source (for glibc 2.31 compatibility)...${NC}"
+    NVIM_OBTAINED=false
 
-    if ! command -v cmake &> /dev/null; then
-        echo -e "${RED}Error: cmake not found. Cannot build neovim.${NC}"
-        exit 1
+    # --- Strategy 1: Download official prebuilt release (relocatable) ---
+    echo -e "${YELLOW}[1/5] Downloading Neovim prebuilt release...${NC}"
+
+    NVIM_VERSION="${NVIM_VERSION:-v0.10.4}"
+    NVIM_TARBALL_URL="https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-x86_64.tar.gz"
+    NVIM_TARBALL="$OFFLINE_DIR/nvim-linux-x86_64.tar.gz"
+
+    echo "  Downloading Neovim ${NVIM_VERSION}..."
+    echo "  URL: $NVIM_TARBALL_URL"
+    if curl -fSL --retry 3 --retry-delay 5 -o "$NVIM_TARBALL" "$NVIM_TARBALL_URL"; then
+        echo "  Extracting..."
+        mkdir -p "$OFFLINE_DIR/nvim/linux-x64"
+        tar -xzf "$NVIM_TARBALL" -C "$OFFLINE_DIR/nvim/linux-x64" --strip-components=1
+        rm -f "$NVIM_TARBALL"
+        NVIM_BIN="$OFFLINE_DIR/nvim/linux-x64/bin/nvim"
+
+        # Verify the binary works on this system (catches glibc mismatches)
+        if "$NVIM_BIN" --version &>/dev/null; then
+            echo -e "${GREEN}Neovim prebuilt downloaded successfully${NC}"
+            "$NVIM_BIN" --version | head -3
+            NVIM_OBTAINED=true
+        else
+            echo -e "${YELLOW}Prebuilt binary incompatible (glibc mismatch?), falling back to source build...${NC}"
+            rm -rf "$OFFLINE_DIR/nvim/linux-x64"
+        fi
+    else
+        echo -e "${YELLOW}Download failed, falling back to source build...${NC}"
     fi
 
-    BUILD_ROOT=$(mktemp -d)
-    cd "$BUILD_ROOT"
+    # --- Strategy 2: Build from source (for older glibc systems) ---
+    if [ "$NVIM_OBTAINED" = false ]; then
+        echo -e "${YELLOW}[1/5] Building Neovim from source...${NC}"
 
-    # Clone neovim
-    git clone --depth 1 --branch stable https://github.com/neovim/neovim.git
-    cd neovim
+        if ! command -v cmake &> /dev/null; then
+            echo -e "${RED}Error: cmake not found. Cannot build neovim.${NC}"
+            echo "  Install cmake or fix network to download prebuilt."
+            exit 1
+        fi
 
-    # Build with Release mode, minimal dependencies
-    # Use all CPU cores for parallel build
-    JOBS=$(nproc 2>/dev/null || echo 4)
-    echo "  Building with $JOBS parallel jobs..."
-    make CMAKE_BUILD_TYPE=Release CMAKE_INSTALL_PREFIX="$BUILD_ROOT/install" -j"$JOBS"
-    make install
+        BUILD_ROOT=$(mktemp -d)
+        cd "$BUILD_ROOT"
 
-    cd "$SCRIPT_DIR"
+        git clone --depth 1 --branch stable https://github.com/neovim/neovim.git
+        cd neovim
 
-    # Copy neovim binaries
-    cp -r "$BUILD_ROOT/install"/* "$OFFLINE_DIR/nvim/linux-x64/"
+        JOBS=$(nproc 2>/dev/null || echo 4)
+        echo "  Building with $JOBS parallel jobs..."
+        make CMAKE_BUILD_TYPE=Release CMAKE_INSTALL_PREFIX="$BUILD_ROOT/install" -j"$JOBS"
+        make install
 
-    # Set path to our built nvim
-    NVIM_BIN="$OFFLINE_DIR/nvim/linux-x64/bin/nvim"
+        cd "$SCRIPT_DIR"
 
-    echo -e "${GREEN}Neovim built successfully${NC}"
-    "$NVIM_BIN" --version | head -3
+        # Copy neovim to package
+        mkdir -p "$OFFLINE_DIR/nvim/linux-x64"
+        cp -r "$BUILD_ROOT/install"/* "$OFFLINE_DIR/nvim/linux-x64/"
 
-    rm -rf "$BUILD_ROOT"
+        NVIM_BIN="$OFFLINE_DIR/nvim/linux-x64/bin/nvim"
+
+        rm -rf "$BUILD_ROOT"
+
+        echo -e "${GREEN}Neovim built from source successfully${NC}"
+        "$NVIM_BIN" --version | head -3
+    fi
 else
     echo -e "${YELLOW}[1/5] Using system neovim...${NC}"
     if ! command -v nvim &> /dev/null; then
