@@ -34,9 +34,7 @@ jobs:
           apt-get install -y \
             git curl ca-certificates \
             gcc g++ make cmake \
-            gettext unzip ninja-build \
-            libtool libtool-bin autoconf automake pkg-config \
-            tree sudo
+            tree
           rm -rf /var/lib/apt/lists/*
 
       - name: Install tree-sitter build dependencies
