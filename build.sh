@@ -107,7 +107,7 @@ if [ "$BUILD_NEOVIM" = true ]; then
     # --- Strategy 1: Download official prebuilt release (relocatable) ---
     echo -e "${YELLOW}[1/5] Downloading Neovim prebuilt release...${NC}"
 
-    NVIM_VERSION="${NVIM_VERSION:-v0.10.4}"
+    NVIM_VERSION="${NVIM_VERSION:-v0.11.2}"
     NVIM_TARBALL_URL="https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-x86_64.tar.gz"
     NVIM_TARBALL="$OFFLINE_DIR/nvim-linux-x86_64.tar.gz"
 
@@ -372,11 +372,9 @@ if [ "$BUILD_MASON" = true ]; then
     fi
 
     cat > "$BUILD_CONFIG/init.lua" << 'MASONEOF'
--- Add vim packages to runtimepath so packadd can find mason.nvim
-vim.opt.rtp:prepend(vim.env.XDG_DATA_HOME .. "/nvim/site")
-
--- Load mason via Vim package system (site/pack/dist/start/)
-vim.cmd("packadd mason")
+-- Add mason.nvim directly to rtp (it's in site/pack/dist/start/mason.nvim/)
+local mason_path = vim.env.XDG_DATA_HOME .. "/nvim/site/pack/dist/start/mason.nvim"
+vim.opt.rtp:prepend(mason_path)
 
 require("mason").setup()
 
