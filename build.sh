@@ -372,6 +372,12 @@ if [ "$BUILD_MASON" = true ]; then
     fi
 
     cat > "$BUILD_CONFIG/init.lua" << 'MASONEOF'
+-- Add vim packages to runtimepath so packadd can find mason.nvim
+vim.opt.rtp:prepend(vim.env.XDG_DATA_HOME .. "/nvim/site")
+
+-- Load mason via Vim package system (site/pack/dist/start/)
+vim.cmd("packadd mason")
+
 require("mason").setup()
 
 local function install_lsp()
